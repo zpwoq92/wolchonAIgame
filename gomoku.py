@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import random
 
-BOARD_SIZE = 9  # 9x9, 더 크게도 가능
+BOARD_SIZE = 9
 
 def create_board():
     return np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
@@ -42,17 +42,30 @@ class GomokuAI:
             return move
         return None
 
-# --- Streamlit 상태 관리 ---
+# 세션 상태 초기화
 if 'mode' not in st.session_state:
     st.session_state['mode'] = None
 if 'game' not in st.session_state:
     st.session_state['game'] = GomokuAI()
 if 'turn' not in st.session_state:
-    st.session_state['turn'] = 1  # 1=흑, 2=백
+    st.session_state['turn'] = 1
 if 'winner' not in st.session_state:
     st.session_state['winner'] = None
 
 st.title("🟦 오목(Gomoku)")
+
+def stone_emoji(val):
+    if val == 1:
+        return "⚫"
+    elif val == 2:
+        return "⚪"
+    else:
+        return "△"
+
+def reset_game():
+    st.session_state['game'] = GomokuAI()
+    st.session_state['turn'] = 1
+    st.session_state['winner'] = None
 
 # 모드 선택
 if st.session_state['mode'] is None:
@@ -61,75 +74,62 @@ if st.session_state['mode'] is None:
     with cl1:
         if st.button("1인용 (AI와 대결)"):
             st.session_state['mode'] = 'ai'
-            st.session_state['game'] = GomokuAI()
-            st.session_state['turn'] = 1
-            st.session_state['winner'] = None
+            reset_game()
+            st.stop()
     with cl2:
         if st.button("2인용 (친구와 대결)"):
             st.session_state['mode'] = 'pvsp'
-            st.session_state['game'] = GomokuAI()
-            st.session_state['turn'] = 1
-            st.session_state['winner'] = None
-    st.stop()  # 모드 선택 후 종료
+            reset_game()
+            st.stop()
 
 gomoku = st.session_state['game']
 turn = st.session_state['turn']
 winner = st.session_state['winner']
 
-def new_game():
-    st.session_state['game'] = GomokuAI()
-    st.session_state['turn'] = 1
-    st.session_state['winner'] = None
-
 if st.button("🔄 게임 다시 시작"):
-    new_game()
-    st.experimental_rerun()
-
-# --- 격자점 위 돌 표시 (테이블 형태) ---
-def stone_emoji(val):
-    if val == 1:
-        return "⚫"  # 흑
-    elif val == 2:
-        return "⚪"  # 백
-    else:
-        return "△"  # 빈 격자점 (작은 삼각형: 마치 교차점처럼)
-
-board = gomoku.board
+    reset_game()
+    st.stop()
 
 st.write(f"**{'AI(백)' if st.session_state['mode']=='ai' and turn==2 else '플레이어'} 차례: {'⚫' if turn==1 else '⚪'}**")
 if winner:
     st.success(f"{'⚫' if winner == 1 else '⚪'} 승리!")
     st.write("게임을 새로 시작하려면 위의 버튼을 누르세요.")
 
-# interactive 오목판
+board = gomoku.board
+
+clicked = False
+
 for i in range(BOARD_SIZE):
     cols = st.columns(BOARD_SIZE)
     for j in range(BOARD_SIZE):
         disp = stone_emoji(board[i, j])
         disabled = (winner is not None) or (board[i, j] != 0)
-        # 버튼에 교차점 이모지로!
+        btn_id = f"{i}-{j}-{board.sum()}" # btn_id도 매번 새로 생성
         if st.session_state['mode'] == "pvsp" or (st.session_state['mode'] == "ai" and turn == 1):
-            if cols[j].button(disp, key=f"{i}_{j}", disabled=disabled):
+            if cols[j].button(disp, key=btn_id, disabled=disabled):
                 if gomoku.make_move((i, j), turn):
                     if gomoku.is_winner(turn):
                         st.session_state['winner'] = turn
                     else:
                         st.session_state['turn'] = 2 if turn == 1 else 1
-                    st.experimental_rerun()
-        else:  # AI 차례
+                    clicked = True
+        else:
             cols[j].write(disp)
 
-# AI 동작
-if st.session_state['mode'] == "ai" and turn == 2 and winner is None:
-    move = gomoku.ai_move()
+# 턴이 넘어갔으면 한 번만 rerun
+if clicked:
+    st.stop()
+
+# AI 자동수 (오류 최소를 위해 마지막에만!)
+if st.session_state['mode'] == "ai" and turn == 2 and not winner:
+    gomoku.ai_move()
     if gomoku.is_winner(2):
         st.session_state['winner'] = 2
-    else:
-        st.session_state['turn'] = 1
-    st.experimental_rerun()
+    st.session_state['turn'] = 1
+    st.stop()
 
 if st.button("메뉴로 돌아가기"):
     st.session_state['mode'] = None
-    st.experimental_rerun()
+    st.stop()
 
 st.caption("⚫ : 흑(플레이어1), ⚪ : 백(플레이어2/AI), △ : 빈 격자점")
