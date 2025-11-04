@@ -2,38 +2,32 @@ import streamlit as st
 import numpy as np
 import random
 
+BOARD_SIZE = 9  # 9x9, 더 크게도 가능
+
+def create_board():
+    return np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+
 class GomokuAI:
-    def __init__(self, board_size=15):
-        self.board_size = board_size
-        self.board = np.zeros((board_size, board_size), dtype=int)
+    def __init__(self):
+        self.board = create_board()
     def is_winner(self, player):
-        for x in range(self.board_size):
-            for y in range(self.board_size):
-                if self.check_direction(x, y, 1, 0, player) or \
-                   self.check_direction(x, y, 0, 1, player) or \
-                   self.check_direction(x, y, 1, 1, player) or \
-                   self.check_direction(x, y, 1, -1, player):
-                    return True
-        return False
-    def check_direction(self, x, y, dx, dy, player):
-        count = 0
-        for i in range(5):
-            if 0 <= x < self.board_size and 0 <= y < self.board_size and self.board[x][y] == player:
-                count += 1
-                if count == 5:
-                    return True
-            else:
-                break
-            x += dx
-            y += dy
+        bs = BOARD_SIZE
+        b = self.board
+        for x in range(bs):
+            for y in range(bs):
+                for dx, dy in [(1,0),(0,1),(1,1),(1,-1)]:
+                    count = 0
+                    for k in range(5):
+                        nx, ny = x+dx*k, y+dy*k
+                        if 0 <= nx < bs and 0 <= ny < bs and b[nx][ny] == player:
+                            count += 1
+                        else:
+                            break
+                    if count == 5:
+                        return True
         return False
     def get_valid_moves(self):
-        moves = []
-        for x in range(self.board_size):
-            for y in range(self.board_size):
-                if self.board[x][y] == 0:
-                    moves.append((x, y))
-        return moves
+        return [(x, y) for x in range(BOARD_SIZE) for y in range(BOARD_SIZE) if self.board[x][y] == 0]
     def make_move(self, move, player):
         x, y = move
         if self.board[x][y] == 0:
@@ -41,77 +35,101 @@ class GomokuAI:
             return True
         return False
     def ai_move(self):
-        moves = self.get_valid_moves()
-        # 간단한 랜덤 AI (여기에 Minimax 등으로 교체하면 됩니다)
-        if moves:
-            move = random.choice(moves)
+        valid = self.get_valid_moves()
+        if valid:
+            move = random.choice(valid)
             self.make_move(move, 2)
             return move
         return None
 
-# Streamlit 어플리케이션
-st.title("오목 게임 (Gomoku)")
-
-SIZE = 9  # 15x15은 너무 큼, 9x9로 줄임(화면에 맞게)
+# --- Streamlit 상태 관리 ---
 if 'mode' not in st.session_state:
-    st.session_state.mode = None
-if 'gomoku' not in st.session_state:
-    st.session_state.gomoku = GomokuAI(SIZE)
+    st.session_state['mode'] = None
+if 'game' not in st.session_state:
+    st.session_state['game'] = GomokuAI()
 if 'turn' not in st.session_state:
-    st.session_state.turn = 1  # 1: 흑, 2: 백
+    st.session_state['turn'] = 1  # 1=흑, 2=백
+if 'winner' not in st.session_state:
+    st.session_state['winner'] = None
 
-if st.session_state.mode is None:
-    st.session_state.gomoku = GomokuAI(SIZE)
-    st.session_state.turn = 1
-    st.session_state.winner = None
+st.title("🟦 오목(Gomoku)")
+
+# 모드 선택
+if st.session_state['mode'] is None:
     st.write("게임 모드를 선택하세요.")
-    if st.button("1인용: AI와 대결"):
-        st.session_state.mode = "ai"
-    if st.button("2인용: 친구와 대결"):
-        st.session_state.mode = "pvsp"
-else:
-    gomoku = st.session_state.gomoku
-    winner = getattr(st.session_state, 'winner', None)
-    if st.button("🔄 게임 다시 시작"):
-        st.session_state.gomoku = GomokuAI(SIZE)
-        st.session_state.turn = 1
-        st.session_state.winner = None
-        st.experimental_rerun()
-    board = gomoku.board
-    columns = st.columns(SIZE)
-    for i in range(SIZE):
-        with columns[i]:
-            for j in range(SIZE):
-                cell = board[i][j]
-                label = ""
-                if cell == 1:
-                    label = "⚫"
-                elif cell == 2:
-                    label = "⚪"
-                if winner or cell != 0:
-                    st.button(label if label else " ", key=f"{i}_{j}", disabled=True)
-                else:
-                    if st.button(label if label else " ", key=f"{i}_{j}"):
-                        if not winner and gomoku.make_move((i, j), st.session_state.turn):
-                            if gomoku.is_winner(st.session_state.turn):
-                                st.session_state.winner = st.session_state.turn
-                            elif st.session_state.mode == "ai" and st.session_state.turn == 1:
-                                # AI 차례
-                                ai_move = gomoku.ai_move()
-                                if ai_move and gomoku.is_winner(2):
-                                    st.session_state.winner = 2
-                            else:
-                                st.session_state.turn = 3 - st.session_state.turn
-                            st.experimental_rerun()
-    # 상태 표시
-    if st.session_state.mode == "ai":
-        st.write("1인용: 흑(⚫)은 여러분, 백(⚪)은 AI입니다.")
-    else:
-        st.write("2인용: 친구와 번갈아 두세요 (흑:⚫ / 백:⚪)")
-    if winner:
-        st.success(f"{'⚫' if winner==1 else '⚪'} 승리!")
+    cl1, cl2 = st.columns(2)
+    with cl1:
+        if st.button("1인용 (AI와 대결)"):
+            st.session_state['mode'] = 'ai'
+            st.session_state['game'] = GomokuAI()
+            st.session_state['turn'] = 1
+            st.session_state['winner'] = None
+    with cl2:
+        if st.button("2인용 (친구와 대결)"):
+            st.session_state['mode'] = 'pvsp'
+            st.session_state['game'] = GomokuAI()
+            st.session_state['turn'] = 1
+            st.session_state['winner'] = None
+    st.stop()  # 모드 선택 후 종료
 
-    if st.button("메뉴로 돌아가기"):
-        st.session_state.mode = None
-        st.session_state.winner = None
-        st.experimental_rerun()
+gomoku = st.session_state['game']
+turn = st.session_state['turn']
+winner = st.session_state['winner']
+
+def new_game():
+    st.session_state['game'] = GomokuAI()
+    st.session_state['turn'] = 1
+    st.session_state['winner'] = None
+
+if st.button("🔄 게임 다시 시작"):
+    new_game()
+    st.experimental_rerun()
+
+# --- 격자점 위 돌 표시 (테이블 형태) ---
+def stone_emoji(val):
+    if val == 1:
+        return "⚫"  # 흑
+    elif val == 2:
+        return "⚪"  # 백
+    else:
+        return "△"  # 빈 격자점 (작은 삼각형: 마치 교차점처럼)
+
+board = gomoku.board
+
+st.write(f"**{'AI(백)' if st.session_state['mode']=='ai' and turn==2 else '플레이어'} 차례: {'⚫' if turn==1 else '⚪'}**")
+if winner:
+    st.success(f"{'⚫' if winner == 1 else '⚪'} 승리!")
+    st.write("게임을 새로 시작하려면 위의 버튼을 누르세요.")
+
+# interactive 오목판
+for i in range(BOARD_SIZE):
+    cols = st.columns(BOARD_SIZE)
+    for j in range(BOARD_SIZE):
+        disp = stone_emoji(board[i, j])
+        disabled = (winner is not None) or (board[i, j] != 0)
+        # 버튼에 교차점 이모지로!
+        if st.session_state['mode'] == "pvsp" or (st.session_state['mode'] == "ai" and turn == 1):
+            if cols[j].button(disp, key=f"{i}_{j}", disabled=disabled):
+                if gomoku.make_move((i, j), turn):
+                    if gomoku.is_winner(turn):
+                        st.session_state['winner'] = turn
+                    else:
+                        st.session_state['turn'] = 2 if turn == 1 else 1
+                    st.experimental_rerun()
+        else:  # AI 차례
+            cols[j].write(disp)
+
+# AI 동작
+if st.session_state['mode'] == "ai" and turn == 2 and winner is None:
+    move = gomoku.ai_move()
+    if gomoku.is_winner(2):
+        st.session_state['winner'] = 2
+    else:
+        st.session_state['turn'] = 1
+    st.experimental_rerun()
+
+if st.button("메뉴로 돌아가기"):
+    st.session_state['mode'] = None
+    st.experimental_rerun()
+
+st.caption("⚫ : 흑(플레이어1), ⚪ : 백(플레이어2/AI), △ : 빈 격자점")
